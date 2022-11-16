@@ -25,3 +25,23 @@ func parseUInt16(stream io.Reader) uint16 {
 
 	return result
 }
+
+func parseUInt32(stream io.Reader) uint32 {
+	var result uint32
+
+	if err := binary.Read(stream, binary.BigEndian, &result); err != nil {
+		log.Fatalf("Error when reading uint32: %v", err)
+	}
+
+	return result
+}
+
+func parseString(stream io.Reader, sz int) string {
+	result := make([]byte, sz)
+
+	if err := binary.Read(stream, binary.BigEndian, &result); err != nil {
+		log.Fatalf("Error when reading byte slice: %v", err)
+	}
+
+	return string(result)
+}
