@@ -30,7 +30,6 @@ func main() {
 func parseSqlCommand(databaseFilePath, command string) {
 	commandParts := strings.Split(command, " ")
 	tableName := commandParts[len(commandParts)-1]
-	fmt.Println("Got tableName: ", tableName)
 
 	databaseFile, err := os.Open(databaseFilePath)
 	if err != nil {
