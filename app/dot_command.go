@@ -15,11 +15,11 @@ func parseDotCommand(command, databaseFilePath string) {
 		}
 
 		dbHeader := parseDatabaseHeader(databaseFile)
-		fmt.Printf("%s.%d\nDatabase Page Size: %d\n",
+		fmt.Printf("%s.%d\ndatabase page size: %d\n",
 			dbHeader.MagicHeader, dbHeader.SQLiteVersion, dbHeader.DbPageSize)
 
 		pageHeader := parsePageHeader(databaseFile)
-		fmt.Printf("No of Tables: %d", pageHeader.NoOfCells)
+		fmt.Printf("number of tables: %d", pageHeader.NoOfCells)
 
 	case ".tables":
 		// print the tables

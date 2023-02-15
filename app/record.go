@@ -32,7 +32,7 @@ func parseRecordValues(stream io.Reader, serialType int) interface{} {
 		textLen := (serialType - 13) / 2
 		return parseString(stream, textLen)
 	} else {
-		log.Fatal("Record format seriaaltype decoder, MY CUSTOM not implemented")
+		log.Fatalf("Record format of serialType %d decoder, MY CUSTOM not implemented", serialType)
 		return -1
 	}
 }
