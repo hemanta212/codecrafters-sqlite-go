@@ -6,80 +6,38 @@ import (
 	"log"
 	"os"
 	"strings"
-	// Available if you need it!
-	// "github.com/pingcap/parser"
-	// "github.com/pingcap/parser/ast"
 )
 
 // Usage: your_sqlite3.sh sample.db .dbinfo
 func main() {
 	databaseFilePath := os.Args[1]
 	command := os.Args[2]
-
-	if len(command) == 0 {
-		fmt.Println("Usage: your_sqlite3.sh sample.db .dbinfo")
-		return
-	}
-	if command[0] == '.' {
-		parseDotCommands(databaseFilePath, command)
+	if strings.HasPrefix(command, ".") {
+		parseDotCommand(command, databaseFilePath)
 	} else {
-		parseSqlCommand(databaseFilePath, command)
-	}
-}
-
-func parseSqlCommand(databaseFilePath, command string) {
-	commandParts := strings.Split(command, " ")
-	tableName := commandParts[len(commandParts)-1]
-
-	databaseFile, err := os.Open(databaseFilePath)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	_, _ = databaseFile.Seek(100, io.SeekStart)
-	sqliteSchemaRows, err := parseSqliteSchemaRows(databaseFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	pageSize := int64(getPageSize(databaseFile))
-	rootPage := -1
-	for _, row := range sqliteSchemaRows {
-		if row.tblName == tableName {
-			rootPage = row.rootPage
-		}
-	}
-	seekAt := (rootPage - 1) * int(pageSize)
-
-	_, _ = databaseFile.Seek(int64(seekAt), io.SeekStart) // Skip the database header
-	pageHeader := parsePageHeader(databaseFile)
-	fmt.Println(pageHeader.NumberOfCells)
-}
-
-func parseDotCommands(databaseFilePath, command string) {
-	switch command {
-	case ".dbinfo":
-		sqliteSchemaRows, err := parseMainPage(databaseFilePath)
+		databaseFile, err := os.Open(databaseFilePath)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal("Error opening db file")
 		}
-		// Uncomment this to pass the first stage
-		fmt.Printf("number of tables: %v", len(sqliteSchemaRows))
+		dbHeader := parseDatabaseHeader(databaseFile)
+		dbPageSize := dbHeader.DbPageSize
+		sqlParts := strings.Split(command, " ")
+		tableName := sqlParts[len(sqlParts)-1]
 
-	case ".tables":
-		sqliteSchemaRows, err := parseMainPage(databaseFilePath)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println(":: Tables")
-		for _, row := range sqliteSchemaRows {
-			if row.tblName == "sqlite_sequence" {
-				continue
+		schemaTables := parseRootPageSchemaTable(databaseFile)
+		rootPage := -1
+		for _, schemaTable := range schemaTables {
+			if schemaTable.table_name == tableName {
+				rootPage = int(schemaTable.rootPage)
 			}
-			fmt.Print(string(row.tblName), " ")
 		}
-	default:
-		fmt.Println("Unknown command", command)
-		os.Exit(1)
+		if rootPage == -1 {
+			log.Fatalf("Table %s not found", tableName)
+		}
+		tablePageOffset := (rootPage - 1) * int(dbPageSize)
+		databaseFile.Seek(int64(tablePageOffset), io.SeekStart)
+
+		tablePageHeader := parsePageHeader(databaseFile)
+		fmt.Println(tablePageHeader.NoOfCells)
 	}
 }
