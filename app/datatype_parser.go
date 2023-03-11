@@ -73,10 +73,26 @@ func parseUInt32(stream io.Reader) uint32 {
 	return result
 }
 
+func parseUInt64(stream io.Reader) uint64 {
+	var result uint64
+	if err := binary.Read(stream, binary.BigEndian, &result); err != nil {
+		log.Fatal("Error parsing uint64", err)
+	}
+	return result
+}
+
 func parseString(stream io.Reader, strlen int) string {
 	result := make([]byte, strlen)
 	if _, err := stream.Read(result); err != nil {
 		log.Fatal("Error parsing string", err)
 	}
 	return string(result)
+}
+
+func parseBytes(stream io.Reader, byteLen int) []byte {
+	result := make([]byte, byteLen)
+	if _, err := stream.Read(result); err != nil {
+		log.Fatal("Error parsing bytes", err)
+	}
+	return result
 }

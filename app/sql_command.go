@@ -72,6 +72,7 @@ func getTableInfo(stmt *parser.SelectStmt, tableSchemaTable SchemaTable, databas
 
 	log.Printf("%+v\n", createSqlStmt)
 	records := []Record{}
+	recordLen := len(createSqlStmt.Function.Arguments) - 1
 	for _, pointer := range cellPointers {
 		pointerOffset := tablePageOffset + int(pointer)
 		// fmt.Println(pointerOffset)
@@ -81,7 +82,8 @@ func getTableInfo(stmt *parser.SelectStmt, tableSchemaTable SchemaTable, databas
 		parseVarint(databaseFile)
 		parseVarint(databaseFile)
 
-		record := parseRecord(databaseFile, 2)
+		record := parseRecord(databaseFile, recordLen)
+		log.Printf("%+v\n", record)
 		records = append(records, record)
 	}
 	columnNames := stmt.ColumnNames
