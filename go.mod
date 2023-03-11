@@ -10,6 +10,4 @@ module github/com/codecrafters-io/sqlite-starter-go
 
 go 1.16
 
-require (
-	github.com/pingcap/parser v0.0.0-20200623164729-3a18f1e5dceb
-)
+require golang.org/x/exp v0.0.0-20230310171629-522b1b587ee0
