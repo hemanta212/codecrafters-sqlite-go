@@ -27,6 +27,8 @@ const (
 	// MISC Chars
 	itemAsterisk // *
 	itemComma    // ,
+	itemEquals   // =
+	itemQuote    // " or '
 
 	// special forms
 	itemFunction      // Count(), any itemIdent with ()
@@ -209,15 +211,31 @@ func lexCommand(l *lexer) stateFn {
 
 func lexIdent(l *lexer) stateFn {
 	l.ignoreAllWhitespace()
+	isInsideStr := false
 	for {
 		char := l.next()
 		if isWhitespace(char) {
 			l.backup()
-			if l.pos > l.start {
+			if l.pos > l.start && !isInsideStr {
 				l.emit(itemIdent)
+			} else if isInsideStr {
+				l.next()
+			} else {
+				l.next()
+				l.emit(itemWs)
 			}
-			l.next()
-			l.emit(itemWs)
+		} else if char == '\'' || char == '"' {
+			if !isInsideStr {
+				isInsideStr = true
+			} else {
+				l.backup()
+				if l.pos > l.start {
+					l.emit(itemIdent)
+				}
+				l.next()
+				isInsideStr = false
+			}
+			l.emit(itemQuote)
 		} else if char == ',' {
 			l.backup()
 			if l.pos > l.start {
@@ -225,6 +243,13 @@ func lexIdent(l *lexer) stateFn {
 			}
 			l.next()
 			l.emit(itemComma)
+		} else if char == '=' {
+			l.backup()
+			if l.pos > l.start {
+				l.emit(itemIdent)
+			}
+			l.next()
+			l.emit(itemEquals)
 		} else if char == '*' {
 			l.emit(itemAsterisk)
 		} else if char == '(' {

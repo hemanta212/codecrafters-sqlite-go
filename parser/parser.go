@@ -24,11 +24,17 @@ type SelectStmt struct {
 	ColumnNames []string
 	TableNames  []string
 	Functions   []SqlFunction
+	Filters     map[string]FilterValue
 }
 
 type SqlFunction struct {
 	Name      string
 	Arguments []string
+}
+
+type FilterValue struct {
+	Value     string
+	IsLiteral bool
 }
 
 type CreateStmt struct {
@@ -100,11 +106,17 @@ func (p *Parser) prepareSelectStatement(items []item) (*SelectStmt, error) {
 		return nil, err
 	}
 
+	filters, index, err := p.scanWhereClause(items[index:])
+	if err != nil {
+		return nil, err
+	}
+
 	return &SelectStmt{
 		Command:     "select",
 		ColumnNames: columnNames,
 		TableNames:  tableNames,
 		Functions:   functions,
+		Filters:     filters,
 	}, nil
 }
 
@@ -243,6 +255,40 @@ func (p *Parser) scanFunctions(items []item) ([]SqlFunction, error) {
 		}
 	}
 	return results, nil
+}
+
+func (p *Parser) scanWhereClause(items []item) (map[string]FilterValue, int, error) {
+	filters := map[string]FilterValue{}
+	count := 0
+	isInsideString := false
+	currKey, currValue := "", FilterValue{}
+	// if sth is after "=" it is a value not key
+	isValue := false
+	for i, ident := range items {
+		count, p.lastItem = i, ident
+		if ident.typ == itemEOF {
+			break
+		} else if ident.typ == itemIdent && !isValue {
+			currKey = ident.val
+		} else if ident.typ == itemEquals {
+			isValue = true
+		} else if ident.typ == itemQuote && isValue {
+			isInsideString = true
+		} else if ident.typ == itemIdent && isInsideString {
+			currValue = FilterValue{Value: ident.val, IsLiteral: true}
+			isValue = false
+		} else if ident.typ == itemQuote && isInsideString {
+			isInsideString = false
+			filters[currKey] = currValue
+		} else if ident.typ == itemIdent && isValue {
+			currValue = FilterValue{Value: ident.val, IsLiteral: false}
+			filters[currKey] = currValue
+		} else if ident.typ == itemEOF && isInsideString {
+			return nil, 0, fmt.Errorf(
+				"Parsing error: Unexpected eof near %q at line %d pos %d", p.lastItem.val, ident.line, ident.pos)
+		}
+	}
+	return filters, count, nil
 }
 
 func (p *Parser) scanCreateTableFunction(items []item) (SqlCreateFunction, error) {

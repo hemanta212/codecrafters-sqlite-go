@@ -29,7 +29,7 @@ func parseSQLCommand(command, databaseFilePath string) {
 
 func executeSelectStmt(stmt interface{}, databaseFile io.ReadSeeker) {
 	selectStmt := stmt.(*parser.SelectStmt)
-	log.Println("Sql Commant: executeSelectStmt: stmt", selectStmt)
+	log.Println("Sql Command: executeSelectStmt: stmt", selectStmt)
 	tableNames := selectStmt.TableNames
 
 	dbHeader := parseDatabaseHeader(databaseFile)
