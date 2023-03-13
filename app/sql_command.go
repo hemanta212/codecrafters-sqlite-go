@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 )
 
 func parseSQLCommand(command, databaseFilePath string) {
@@ -86,10 +87,29 @@ func getTableInfo(stmt *parser.SelectStmt, tableSchemaTable SchemaTable, databas
 		log.Printf("%+v\n", record)
 		records = append(records, record)
 	}
+
+	// modify records using filters
+	filteredRecords := records
+	if len(stmt.Filters) > 0 {
+		filteredRecords = []Record{}
+		for _, record := range records {
+			for columnName, FilterValue := range stmt.Filters {
+				columnOrder, exist := columnNameOrder[columnName]
+				if !exist {
+					log.Fatalf("Cannot find column %q in table %q", columnName, tableSchemaTable.table_name)
+				}
+				value := record.values[columnOrder].(string)
+				if FilterValue.Value == strings.ToLower(value) {
+					filteredRecords = append(filteredRecords, record)
+				}
+			}
+		}
+	}
+
 	columnNames := stmt.ColumnNames
 	// what to print for each row eg -> 0: [name1, color1, id1],  1: [name2, color2, id2]
 	resultsToPrint := map[int][]string{}
-	for i, record := range records {
+	for i, record := range filteredRecords {
 		for _, columnName := range columnNames {
 			columnOrder, exist := columnNameOrder[columnName]
 			if !exist {
