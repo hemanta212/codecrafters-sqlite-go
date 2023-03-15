@@ -10,11 +10,18 @@ import (
 // Usage: your_sqlite3.sh sample.db .dbinfo
 func main() {
 	log.SetOutput(ioutil.Discard)
+
 	databaseFilePath := os.Args[1]
 	command := os.Args[2]
+	db, err := NewDatabase(databaseFilePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.databaseFile.Close()
+
 	if strings.HasPrefix(command, ".") {
-		parseDotCommand(command, databaseFilePath)
+		db.parseDotCommand(command)
 	} else {
-		parseSQLCommand(command, databaseFilePath)
+		db.parseSQLCommand(command)
 	}
 }

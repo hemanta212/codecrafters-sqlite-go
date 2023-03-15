@@ -2,32 +2,21 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 )
 
-func parseDotCommand(command, databaseFilePath string) {
+func (d *Database) parseDotCommand(command string) {
 	switch command {
 	case ".dbinfo":
-		databaseFile, err := os.Open(databaseFilePath)
-		if err != nil {
-			log.Fatal("Cannot open the db file", err)
-		}
-
-		dbHeader := parseDatabaseHeader(databaseFile)
+		dbHeader := parseDatabaseHeader(d.databaseFile)
 		fmt.Printf("%s.%d\ndatabase page size: %d\n",
 			dbHeader.MagicHeader, dbHeader.SQLiteVersion, dbHeader.DbPageSize)
 
-		pageHeader := parsePageHeader(databaseFile)
+		pageHeader := parsePageHeader(d.databaseFile)
 		fmt.Printf("number of tables: %d", pageHeader.NoOfCells)
-
 	case ".tables":
 		// print the tables
-		databaseFile, err := os.Open(databaseFilePath)
-		if err != nil {
-			log.Fatal("Cannot open the db file", err)
-		}
-		schemaTables := parseRootPageSchemaTable(databaseFile)
+		schemaTables := parseRootPageSchemaTable(d.databaseFile)
 		for _, schemaTable := range schemaTables {
 			if schemaTable.table_name == "sqlite_sequence" {
 				continue

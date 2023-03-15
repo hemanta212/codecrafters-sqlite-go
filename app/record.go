@@ -6,6 +6,7 @@ import (
 )
 
 type Record struct {
+	id     int
 	values []interface{}
 }
 
@@ -24,17 +25,22 @@ func parseRecord(stream io.Reader, valuesCount int) Record {
 }
 
 func parseRecordValues(stream io.Reader, serialType int) interface{} {
-	if serialType == 1 {
+	if serialType == 0 {
+		return nil
+	} else if serialType == 1 {
 		// 8 bit two's complement
 		return parseUInt8(stream)
-	} else if serialType == 0 {
-		return nil
+	} else if serialType == 2 {
+		// 16 bit two's complement
+		return parseUInt16(stream)
 	} else if serialType == 4 {
 		// 32 bit big endian two's complement
 		return parseUInt32(stream)
 	} else if serialType == 6 {
 		// 64 bit big endian two's complement
 		return parseUInt64(stream)
+	} else if serialType == 9 {
+		return 1
 	} else if serialType >= 13 && serialType%2 == 1 {
 		// text
 		textLen := (serialType - 13) / 2

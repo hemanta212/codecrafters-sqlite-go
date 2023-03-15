@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"log"
 )
 
 type DatabaseHeader struct {
@@ -11,6 +12,7 @@ type DatabaseHeader struct {
 }
 
 type PageHeader struct {
+	PageType  byte
 	NoOfCells uint16
 }
 
@@ -25,11 +27,22 @@ type SchemaTable struct {
 func parsePageHeader(stream io.ReadSeeker) PageHeader {
 	// 8-12 bytes page header immediately after the db header
 	// todo; curretly unimportant data
-	stream.Seek(3, io.SeekCurrent)
+	pageType := parseBytes(stream, 1)[0]
+	log.Println("PageType:", pageType)
+	stream.Seek(2, io.SeekCurrent)
 	noOfCells := parseUInt16(stream)
 	// todo to parse
 	stream.Seek(3, io.SeekCurrent)
+
+	// for internal pageType page header is 12 bytes
+	lastOffset := 0
+	if pageType == 2 || pageType == 5 {
+		lastOffset = 4
+	}
+	stream.Seek(int64(lastOffset), io.SeekCurrent)
+
 	return PageHeader{
+		PageType:  pageType,
 		NoOfCells: noOfCells,
 	}
 }

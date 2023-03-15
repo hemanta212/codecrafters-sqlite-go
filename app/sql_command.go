@@ -6,15 +6,31 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 )
 
-func parseSQLCommand(command, databaseFilePath string) {
+type Database struct {
+	databaseFile io.ReadSeekCloser
+	dbHeader     DatabaseHeader
+	pageHeader   PageHeader
+}
+
+func NewDatabase(databaseFilePath string) (*Database, error) {
 	databaseFile, err := os.Open(databaseFilePath)
-	defer databaseFile.Close()
 	if err != nil {
-		log.Fatal("Error opening db file")
+		return nil, err
 	}
+	dbHeader := parseDatabaseHeader(databaseFile)
+
+	return &Database{
+		databaseFile: databaseFile,
+		dbHeader:     dbHeader,
+		pageHeader:   PageHeader{},
+	}, nil
+}
+
+func (db *Database) parseSQLCommand(command string) {
 	stmt, err := parser.NewParser(command).Parse()
 	if err != nil {
 		log.Fatal(err)
@@ -22,104 +38,68 @@ func parseSQLCommand(command, databaseFilePath string) {
 	_, Sok := stmt.(*parser.SelectStmt)
 
 	if Sok {
-		executeSelectStmt(stmt, databaseFile)
+		db.executeSelectStmt(stmt)
 	} else {
 		fmt.Println("Not Implememented")
 	}
 }
 
-func executeSelectStmt(stmt interface{}, databaseFile io.ReadSeeker) {
+func (db *Database) executeSelectStmt(stmt interface{}) {
 	selectStmt := stmt.(*parser.SelectStmt)
 	log.Println("Sql Command: executeSelectStmt: stmt", selectStmt)
 	tableNames := selectStmt.TableNames
 
-	dbHeader := parseDatabaseHeader(databaseFile)
-	dbPageSize := dbHeader.DbPageSize
-	schemaTables := parseRootPageSchemaTable(databaseFile)
+	schemaTables := parseRootPageSchemaTable(db.databaseFile)
 	for _, schemaTable := range schemaTables {
 		for _, tableName := range tableNames {
 			if tableName == schemaTable.name {
-				getTableInfo(selectStmt, schemaTable, databaseFile, dbPageSize)
+				db.getTableInfo(selectStmt, schemaTable)
 			}
 		}
 	}
 }
 
-func getTableInfo(stmt *parser.SelectStmt, tableSchemaTable SchemaTable, databaseFile io.ReadSeeker, dbPageSize uint16) {
-	rootPage := int(tableSchemaTable.rootPage)
-	tablePageOffset := (rootPage - 1) * int(dbPageSize)
-	databaseFile.Seek(int64(tablePageOffset), io.SeekStart)
+func (db *Database) getTableInfo(stmt *parser.SelectStmt, tableSchema SchemaTable) {
+	// execute functions
+	db.executeFunctions(stmt.Functions, tableSchema)
 
-	tablePageHeader := parsePageHeader(databaseFile)
-	for _, function := range stmt.Functions {
-		if function.Name == "count" {
-			fmt.Println(tablePageHeader.NoOfCells)
-		} else {
-			fmt.Printf("Not implemented Error, Select Function %q\n", function.Name)
-		}
-	}
+	// parse columnNames from db
+	columns := parseColumnsFromCreateSQL(tableSchema)
 
-	cellPointers := make([]uint16, tablePageHeader.NoOfCells)
-	for i := range cellPointers {
-		cellPointers[i] = parseUInt16(databaseFile)
-	}
+	// get records
+	records := db.getRecords(int(tableSchema.rootPage), columns)
 
-	sqlStmt, err := parser.NewParser(tableSchemaTable.sql).Parse()
+	// filter records if any filters present
+	records, err := db.filterRecords(records, stmt, columns)
 	if err != nil {
-		log.Fatalf("Error parsing sql for table %q %q", tableSchemaTable.table_name, tableSchemaTable.sql)
-	}
-	createSqlStmt := sqlStmt.(*parser.CreateStmt)
-	columnNameOrder := arrangeColumnNameOrder(createSqlStmt)
-
-	log.Printf("%+v\n", createSqlStmt)
-	records := []Record{}
-	recordLen := len(createSqlStmt.Function.Arguments) - 1
-	for _, pointer := range cellPointers {
-		pointerOffset := tablePageOffset + int(pointer)
-		// fmt.Println(pointerOffset)
-		databaseFile.Seek(int64(pointerOffset), io.SeekStart)
-		parseVarint(databaseFile) // payload size
-		// id of row
-		parseVarint(databaseFile)
-		parseVarint(databaseFile)
-
-		record := parseRecord(databaseFile, recordLen)
-		log.Printf("%+v\n", record)
-		records = append(records, record)
-	}
-
-	// modify records using filters
-	filteredRecords := records
-	if len(stmt.Filters) > 0 {
-		filteredRecords = []Record{}
-		for _, record := range records {
-			for columnName, FilterValue := range stmt.Filters {
-				columnOrder, exist := columnNameOrder[columnName]
-				if !exist {
-					log.Fatalf("Cannot find column %q in table %q", columnName, tableSchemaTable.table_name)
-				}
-				value := record.values[columnOrder].(string)
-				if FilterValue.Value == strings.ToLower(value) {
-					filteredRecords = append(filteredRecords, record)
-				}
-			}
-		}
+		log.Fatalf("Error processing table %q, %s", tableSchema.table_name, err)
 	}
 
 	columnNames := stmt.ColumnNames
 	// what to print for each row eg -> 0: [name1, color1, id1],  1: [name2, color2, id2]
 	resultsToPrint := map[int][]string{}
-	for i, record := range filteredRecords {
+	for i, record := range records {
 		for _, columnName := range columnNames {
-			columnOrder, exist := columnNameOrder[columnName]
+			columnOrder, exist := columns[columnName]
 			if !exist {
-				log.Fatalf("Cannot find column %q in table %q", columnName, tableSchemaTable.table_name)
+				log.Fatalf("Cannot find column %q in table %q", columnName, tableSchema.table_name)
 			}
-			value := record.values[columnOrder].(string)
+			value := ""
+			if columnOrder == -1 {
+				// not in record.values since it is primary id
+				value = strconv.Itoa(record.id)
+			} else {
+				value = record.values[columnOrder].(string)
+			}
 			resultsToPrint[i] = append(resultsToPrint[i], value)
 		}
 	}
-	for _, value := range resultsToPrint {
+
+	for i, _ := range records {
+		value, ok := resultsToPrint[i]
+		if !ok {
+			continue
+		}
 		for i, val := range value {
 			if i == len(value)-1 {
 				fmt.Printf("%s", val)
@@ -129,6 +109,113 @@ func getTableInfo(stmt *parser.SelectStmt, tableSchemaTable SchemaTable, databas
 		}
 		fmt.Println()
 	}
+}
+
+func (db *Database) getRecords(tablePage int, columns map[string]int) []Record {
+	tablePageOffset := (tablePage - 1) * int(db.dbHeader.DbPageSize)
+	cellPointers := db.parseCellPointersFromPage(tablePageOffset)
+
+	records := []Record{}
+	recordLen := len(columns) - 1
+	log.Println("Columns:", recordLen)
+
+	pageType := db.pageHeader.PageType
+	log.Println("PageType:", pageType)
+
+	for _, pointer := range cellPointers {
+		pointerOffset := tablePageOffset + int(pointer)
+		db.databaseFile.Seek(int64(pointerOffset), io.SeekStart)
+
+		switch pageType {
+		case 13:
+			id := scanCellHeader(db.pageHeader, db.databaseFile)
+			record := parseRecord(db.databaseFile, recordLen)
+			record.id = id
+			log.Printf("%+v\n", record)
+			records = append(records, record)
+		case 5:
+			leftChildPointer := parseUInt32(db.databaseFile)
+			parseVarint(db.databaseFile) // int key
+			newRecords := db.getRecords(int(leftChildPointer), columns)
+			records = append(records, newRecords...)
+		default:
+			log.Fatal("Unknown page Type, Implement for type", pageType)
+		}
+	}
+	return records
+}
+
+func (db *Database) executeFunctions(functions []parser.SqlFunction, schemaTable SchemaTable) {
+	rootPage := int(schemaTable.rootPage)
+	log.Println("SQLCmd: exeFunctions: rootPage", rootPage)
+	tablePageOffset := (rootPage - 1) * int(db.dbHeader.DbPageSize)
+	db.databaseFile.Seek(int64(tablePageOffset), io.SeekStart)
+
+	db.pageHeader = parsePageHeader(db.databaseFile)
+	for _, function := range functions {
+		if function.Name == "count" {
+			fmt.Println(db.pageHeader.NoOfCells)
+		} else {
+			fmt.Printf("Not implemented Error, Select Function %q\n", function.Name)
+		}
+	}
+}
+
+func (db *Database) filterRecords(records []Record, stmt *parser.SelectStmt, columns map[string]int) ([]Record, error) {
+	if len(stmt.Filters) <= 0 {
+		return records, nil
+	}
+
+	results := []Record{}
+	for _, record := range records {
+		for columnName, FilterValue := range stmt.Filters {
+			columnOrder, exist := columns[columnName]
+			if !exist {
+				return nil, fmt.Errorf("Cannot find column %q", columnName)
+			}
+			valueRaw := record.values[columnOrder]
+			if valueRaw == nil {
+				continue
+			}
+			value := record.values[columnOrder].(string)
+			if FilterValue.Value == strings.ToLower(value) {
+				results = append(results, record)
+			}
+		}
+	}
+	return results, nil
+}
+
+func scanCellHeader(tablePageHeader PageHeader, databaseFile io.ReadSeeker) int {
+	parseVarint(databaseFile)       // pay load
+	id := parseVarint(databaseFile) // primary key int
+	parseVarint(databaseFile)       // initial portion of payload
+	return id
+}
+
+func (db *Database) parseCellPointersFromPage(dbPageOffset int) []uint16 {
+	db.databaseFile.Seek(int64(dbPageOffset), io.SeekStart)
+
+	db.pageHeader = parsePageHeader(db.databaseFile)
+
+	cellPointers := make([]uint16, db.pageHeader.NoOfCells)
+	for i := range cellPointers {
+		cellPointers[i] = parseUInt16(db.databaseFile)
+	}
+	log.Println("SQLCmd: parseCellPointers: cellPointers", cellPointers)
+	return cellPointers
+}
+
+func parseColumnsFromCreateSQL(tableSchema SchemaTable) map[string]int {
+	sqlStmt, err := parser.NewParser(tableSchema.sql).Parse()
+	if err != nil {
+		log.Fatalf("Error parsing sql for table %q %q", tableSchema.table_name, tableSchema.sql)
+	}
+
+	createSqlStmt := sqlStmt.(*parser.CreateStmt)
+	columnNameOrder := arrangeColumnNameOrder(createSqlStmt)
+	log.Printf("%+v\n", createSqlStmt)
+	return columnNameOrder
 }
 
 func arrangeColumnNameOrder(stmt *parser.CreateStmt) map[string]int {
