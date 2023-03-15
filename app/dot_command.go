@@ -5,18 +5,16 @@ import (
 	"os"
 )
 
-func (d *Database) parseDotCommand(command string) {
+func (db *Database) parseDotCommand(command string) {
 	switch command {
 	case ".dbinfo":
-		dbHeader := parseDatabaseHeader(d.databaseFile)
 		fmt.Printf("%s.%d\ndatabase page size: %d\n",
-			dbHeader.MagicHeader, dbHeader.SQLiteVersion, dbHeader.DbPageSize)
-
-		pageHeader := parsePageHeader(d.databaseFile)
+			db.dbHeader.MagicHeader, db.dbHeader.SQLiteVersion, db.dbHeader.DbPageSize)
+		pageHeader := parsePageHeader(db.databaseFile)
 		fmt.Printf("number of tables: %d", pageHeader.NoOfCells)
 	case ".tables":
 		// print the tables
-		schemaTables := parseRootPageSchemaTable(d.databaseFile)
+		schemaTables := parseRootPageSchemaTable(db.databaseFile)
 		for _, schemaTable := range schemaTables {
 			if schemaTable.table_name == "sqlite_sequence" {
 				continue
